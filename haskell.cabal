@@ -1,0 +1,22 @@
+cabal-version:   3.0
+name:            haskell
+version:         0.1.0.0
+license:         BSD-3-Clause
+license-file:    LICENSE
+author:          Bhargav Annem
+maintainer:      bannem@caltech.edu
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable haskell
+    import:           warnings
+    main-is:          Main.hs
+    build-depends:    base ^>=4.17.2.1
+                   ,  bytestring
+                   ,  cryptonite
+                   ,  memory
+    hs-source-dirs:   app
+    default-language: GHC2021
