@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use camelCase" #-}
 
 import Crypto.Hash (hashWith, SHA256(..), Digest)
 import Data.ByteArray.Encoding (convertToBase, Base(Base16))
