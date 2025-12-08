@@ -13,3 +13,7 @@ This could be an interesting approach akin to the current suite of verifiable co
 
 TLDR: 
 > We do checksums to the semantics of a program via SKI calculus to get a binding verifiable computation trace.
+
+Some interesting directions/stuff that needs to be thought about: 
+- it really is just a way of attesting to integrity for now, correctness is probably though MACs folded into the hash functoins
+- also maybe some weird random oracle stuff that can be done where verifier checks randommly chosen reductions..kind of like freivalds algo for checking matrix multiplications
