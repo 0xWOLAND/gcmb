@@ -1,109 +1,123 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Use camelCase" #-}
+module Main where
 
-import Crypto.Hash (hashWith, SHA256(..), Digest)
-import Data.ByteArray.Encoding (convertToBase, Base(Base16))
+import Crypto.Hash (SHA256(..), hashWith)
+import Data.ByteArray.Encoding (convertToBase, Base(..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
+import Control.Applicative ((<|>))
 
-data SKI
-  = S
-  | K
-  | I                        -- optional since I = S K K
+-- Hash utilities
+h :: ByteString -> ByteString
+h = convertToBase Base16 . hashWith SHA256
+
+tag :: ByteString -> [ByteString] -> ByteString
+tag t xs = h (B.concat (t : xs))
+
+mk :: ByteString -> [ByteString] -> String -> SemHash
+mk tg xs = SemHash (tag tg xs)
+
+-- Terms
+data Term
+  = S | K | I
   | App Term Term
   deriving (Eq, Show)
 
-newtype Term = In SKI
-  deriving (Eq, Show)
+data SemHash = SemHash
+  { digest :: ByteString
+  , desc   :: String
+  } deriving (Show, Eq)
 
-s :: Term
-s = In S
+-- Semantic hashing
 
-k :: Term
-k = In K
+hashTerm :: Term -> SemHash
+hashTerm S         = mk "S"   []     "S"
+hashTerm K         = mk "K"   []     "K"
+hashTerm I         = mk "I"   []     "I"
 
-i :: Term
-i = In I
+hashTerm (App f x) =
+  let hf = digest (hashTerm f)
+      hx = digest (hashTerm x)
+  in case (f, x) of
+       (App K a, b) ->
+         mk "K_RULE" [digest (hashTerm a), digest (hashTerm b)]
+                      "K-reduction-redex"
 
-app :: Term -> Term -> Term
-app a b = In (App a b)
+       (I, y) ->
+         mk "I_RULE" [digest (hashTerm y)]
+                      "I-reduction-redex"
 
--- merkle hash the SKI Terms
+       (App (App S f1) g1, x1) ->
+         mk "S_RULE" [digest (hashTerm f1), digest (hashTerm g1), digest (hashTerm x1)]
+                     "S-reduction-redex"
 
--- hash to hex string
-h :: ByteString -> ByteString
-h bs = convertToBase Base16 (hashWith SHA256 bs)
+       (App S f1, g1) ->
+         mk "S_WAIT2" [digest (hashTerm f1), digest (hashTerm g1)]
+                      "partial-S (needs x)"
 
--- serialize a term in a simple way
-serialize :: Term -> ByteString
-serialize (In S)      = "S"
-serialize (In K)      = "K"
-serialize (In I)      = "I"
-serialize (In (App f x)) = "A(" <> serialize f <> "," <> serialize x <> ")"
+       (S, f1) ->
+         mk "S_WAIT1" [digest (hashTerm f1)]
+                      "partial-S (needs g, x)"
 
--- Merkle hash of a full SKI term
-merkle :: Term -> ByteString
-merkle t = h ("NODE:" <> serialize t)
+       _ ->
+         mk "APP" [hf, hx] "structural application"
 
--- SKI reduction
+-- reduction
+reduce :: Term -> Maybe Term
+reduce (App f x) =
+  case (f, x) of
 
--- Perform one step of SKI reduction, if we can
-reduceOnce :: Term -> Maybe Term
-reduceOnce (In (App (In (App (In (App (In S) f)) g)) x)) =
-    -- S f g x  ->  f x (g x)
-    Just $ app (app f x) (app g x)
+    -- K-rule
+    (App K a, _) -> Just a
 
--- there is a short-circuit: S K K is extensionally I
-reduceOnce (In (App (In (App (In S) (In K))) (In K))) =
-    Just i
+    -- I-rule
+    (I, x1) -> Just x1
 
-reduceOnce (In (App (In (App (In K) a)) b)) =
-    -- K a b -> a
-    Just a
+    -- S-rule
+    (App (App S f1) g1, x1) ->
+        Just (App (App f1 x1) (App g1 x1))
 
-reduceOnce (In (App (In I) x)) =
-    -- I x -> x
-    Just x
+    -- Otherwise try to reduce left, then right
+    _ -> App <$> reduce f <*> pure x
+         <|> App f <$> reduce x
 
--- Try reducing a subterm
-reduceOnce (In (App f x)) =
-    case reduceOnce f of
-      Just f' -> Just (app f' x)
-      Nothing ->
-        case reduceOnce x of
-          Just x' -> Just (app f x')
-          Nothing -> Nothing
+reduce _ = Nothing
 
--- No reductions inside S/K/I
-reduceOnce _ = Nothing
 
--- repeated reduction
+-- The reduction step
+data Step = Step
+  { beforeHash :: SemHash
+  , afterHash  :: SemHash
+  , rule       :: String
+  , termAfter  :: Term
+  } deriving (Show)
 
-nf :: Term -> Term
-nf t = maybe t nf (reduceOnce t)
+reduceStep :: Term -> Maybe Step
+reduceStep t = do
+  new <- reduce t
+  let oldH = hashTerm t
+  let newH = hashTerm new
+  return (Step oldH newH (desc newH) new)
 
--- example programs
-
--- S K K = I
+-- Examples
 ski_I :: Term
-ski_I = app (app s k) k  -- should reduce to I
+ski_I = App (App S K) K   -- SKK
 
--- example: ((S K K) x) -> x
 example :: Term
-example = app ski_I (app s k)  -- something arbitrary as "x"
+example = App ski_I (App S K)
+
+demo :: IO ()
+demo = do
+  putStrLn "SKK semantic hash:"
+  print (hashTerm ski_I)
+
+  putStrLn "\nOne reduction step of SKK:"
+  print (reduceStep ski_I)
+
+  putStrLn "\nReduction of example:"
+  print (reduceStep example)
 
 main :: IO ()
-main = do
-  let t = ski_I
-  putStrLn $ "Term: " ++ show t
-  putStrLn $ "Merkle(t) = " ++ C.unpack (merkle t)
-
-  let red = reduceOnce t
-  putStrLn $ "One step reduction: " ++ show red
-
-  putStrLn $ "NF(ski_I)   = " ++ show (nf ski_I)
-  putStrLn $ "Merkle(NF)  = " ++ C.unpack (merkle (nf ski_I))
-
-  putStrLn "\nExample application ((S K K) X):"
-  putStrLn $ "  Before: " ++ show example
-  putStrLn $ "  After:  " ++ show (nf example)
+main = demo
