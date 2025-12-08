@@ -1,95 +1,123 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Use camelCase" #-}
+module Main where
 
-import Crypto.Hash (hashWith, SHA256(..), Digest)
-import Data.ByteArray.Encoding (convertToBase, Base(Base16))
+import Crypto.Hash (SHA256(..), hashWith)
+import Data.ByteArray.Encoding (convertToBase, Base(..))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Char8 as C
+import Control.Applicative ((<|>))
 
-data SKI
-  = S
-  | K
-  | I
+-- Hash utilities
+h :: ByteString -> ByteString
+h = convertToBase Base16 . hashWith SHA256
+
+tag :: ByteString -> [ByteString] -> ByteString
+tag t xs = h (B.concat (t : xs))
+
+mk :: ByteString -> [ByteString] -> String -> SemHash
+mk tg xs = SemHash (tag tg xs)
+
+-- Terms
+data Term
+  = S | K | I
   | App Term Term
   deriving (Eq, Show)
 
-newtype Term = In SKI
-  deriving (Eq, Show)
+data SemHash = SemHash
+  { digest :: ByteString
+  , desc   :: String
+  } deriving (Show, Eq)
 
--- constructors
-s = In S
-k = In K
-i = In I
-app a b = In (App a b)
+-- Semantic hashing
 
--- utilities
+hashTerm :: Term -> SemHash
+hashTerm S         = mk "S"   []     "S"
+hashTerm K         = mk "K"   []     "K"
+hashTerm I         = mk "I"   []     "I"
 
-h :: ByteString -> ByteString
-h bs = convertToBase Base16 (hashWith SHA256 bs)
+hashTerm (App f x) =
+  let hf = digest (hashTerm f)
+      hx = digest (hashTerm x)
+  in case (f, x) of
+       (App K a, b) ->
+         mk "K_RULE" [digest (hashTerm a), digest (hashTerm b)]
+                      "K-reduction-redex"
 
-serialize :: Term -> ByteString
-serialize (In S)      = "S"
-serialize (In K)      = "K"
-serialize (In I)      = "I"
-serialize (In (App f x)) = "A(" <> serialize f <> "," <> serialize x <> ")"
+       (I, y) ->
+         mk "I_RULE" [digest (hashTerm y)]
+                      "I-reduction-redex"
 
-merkle :: Term -> ByteString
-merkle t = h ("NODE:" <> serialize t)
+       (App (App S f1) g1, x1) ->
+         mk "S_RULE" [digest (hashTerm f1), digest (hashTerm g1), digest (hashTerm x1)]
+                     "S-reduction-redex"
 
-stepHash :: ByteString -> Term -> ByteString
-stepHash prev t = h ("STEP:" <> prev <> merkle t)
+       (App S f1, g1) ->
+         mk "S_WAIT2" [digest (hashTerm f1), digest (hashTerm g1)]
+                      "partial-S (needs x)"
 
--- SKI reduction
+       (S, f1) ->
+         mk "S_WAIT1" [digest (hashTerm f1)]
+                      "partial-S (needs g, x)"
 
-reduceOnce :: Term -> Maybe Term
-reduceOnce (In (App (In (App (In (App (In S) f)) g)) x)) =
-    Just $ app (app f x) (app g x)
+       _ ->
+         mk "APP" [hf, hx] "structural application"
 
-reduceOnce (In (App (In (App (In S) (In K))) (In K))) =
-    Just i
+-- reduction
+reduce :: Term -> Maybe Term
+reduce (App f x) =
+  case (f, x) of
 
-reduceOnce (In (App (In (App (In K) a)) b)) =
-    Just a
+    -- K-rule
+    (App K a, _) -> Just a
 
-reduceOnce (In (App (In I) x)) =
-    Just x
+    -- I-rule
+    (I, x1) -> Just x1
 
-reduceOnce (In (App f x)) =
-    case reduceOnce f of
-      Just f' -> Just (app f' x)
-      Nothing ->
-        case reduceOnce x of
-          Just x' -> Just (app f x')
-          Nothing -> Nothing
+    -- S-rule
+    (App (App S f1) g1, x1) ->
+        Just (App (App f1 x1) (App g1 x1))
 
-reduceOnce _ = Nothing
+    -- Otherwise try to reduce left, then right
+    _ -> App <$> reduce f <*> pure x
+         <|> App f <$> reduce x
+
+reduce _ = Nothing
 
 
-reduceWithTrace :: Term -> (Term, [ByteString])
-reduceWithTrace t0 = go t0 [merkle t0]  
-  where
-    go t acc =
-      case reduceOnce t of
-        Nothing -> (t, reverse acc)
-        Just t' ->
-          let hNext = stepHash (head acc) t'
-          in go t' (hNext : acc)
+-- The reduction step
+data Step = Step
+  { beforeHash :: SemHash
+  , afterHash  :: SemHash
+  , rule       :: String
+  , termAfter  :: Term
+  } deriving (Show)
 
--- example
+reduceStep :: Term -> Maybe Step
+reduceStep t = do
+  new <- reduce t
+  let oldH = hashTerm t
+  let newH = hashTerm new
+  return (Step oldH newH (desc newH) new)
 
-ski_I = app (app s k) k
-example = app ski_I (app s k)
+-- Examples
+ski_I :: Term
+ski_I = App (App S K) K   -- SKK
+
+example :: Term
+example = App ski_I (App S K)
+
+demo :: IO ()
+demo = do
+  putStrLn "SKK semantic hash:"
+  print (hashTerm ski_I)
+
+  putStrLn "\nOne reduction step of SKK:"
+  print (reduceStep ski_I)
+
+  putStrLn "\nReduction of example:"
+  print (reduceStep example)
 
 main :: IO ()
-main = do
-  let (nfI, traceI) = reduceWithTrace ski_I
-  putStrLn "Sequential hash chain for S K K:"
-  mapM_ (putStrLn . C.unpack) traceI
-  putStrLn ("Normal form: " ++ show nfI)
-
-  let (nfEx, traceEx) = reduceWithTrace example
-  putStrLn "\nSequential hash chain for ((S K K) X):"
-  mapM_ (putStrLn . C.unpack) traceEx
-  putStrLn ("Normal form: " ++ show nfEx)
+main = demo
