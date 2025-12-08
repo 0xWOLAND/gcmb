@@ -14,6 +14,9 @@ This could be an interesting approach akin to the current suite of verifiable co
 TLDR: 
 > We do checksums to the semantics of a program via SKI calculus to get a binding verifiable computation trace.
 
+### What the end product could look like: 
+In practice, working directly with SKI calculus isn't a pleasant experience but there are methods of reducing [lambda calculus into SKI calculus](https://thma.github.io/posts/2023-10-08-Optimizing-bracket-abstraction-for-combinator-reduction.html). So a simple example could be implementing a dialect of Lisp on top of this runtime, and in the best case there are a suite of pure deterministic Rust programs (think of the same ones that are currently ingestible by ZKVMs) that could be used by this. In which, a user would simply add a tag to their program that is built directly into the compiler and would be able to make use of this semantic verification system for free. 
+
 Some interesting directions/stuff that needs to be thought about: 
 - it really is just a way of attesting to integrity for now, correctness is probably though MACs folded into the hash functoins
 - also maybe some weird random oracle stuff that can be done where verifier checks randommly chosen reductions..kind of like freivalds algo for checking matrix multiplications
