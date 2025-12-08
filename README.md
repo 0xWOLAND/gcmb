@@ -9,7 +9,7 @@ Through semantic hashing, we can treat teh operational semantics of computation 
 
 > Concerning checksums, it is often the case that two programs can be syntactically distinct but semantically equivalent -- an isssue that traditional hashing won't capture. But SKI terms assign the hash iff they correspond to the same semantic object under teh calculus. 
 
-This could be an interesting approach akin to the current suite of verifiable comptuation schemes like SNARK/STARK-based incrementally verifiable computation. There is probably also a way to get succinctness using an append-only accumulator (to enforce ordering on teh computation trace).
+This could be an interesting approach akin to the current suite of verifiable comptuation schemes like SNARK/STARK-based incrementally verifiable computation. There is probably also a way to get succinctness using an [append-only accumulator](https://eprint.iacr.org/2025/234.pdf) (to enforce ordering on teh computation trace).
 
 TLDR: 
 > We do checksums to the semantics of a program via SKI calculus to get a binding verifiable computation trace.
