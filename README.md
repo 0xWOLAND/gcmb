@@ -1,18 +1,15 @@
-# Merklelized SKI Calculus
+# Semantic Hashing of Operational Semantics
 
-SKI caluclus is the smallest combinatory programming language with three primitives (S,K, I combinators). And every program is a binary tree built strictly from applications via the reduction rules 
-- `Kxy -> x`
-- `S fgx -> fx(gx)`
-- `Ix -> x`
+The idea of this project is to make use of *semantic hashing*, which cryptographically ocmmits to the intensional structure and reduction behavior of combinatory logic. Similar existing work includes [authenticated data structures](https://dl.acm.org/doi/pdf/10.1145/2535838.2535851), [zero-knowledge virtual machines](https://github.com/rkdud007/awesome-zkvm), [proof-carrying data](https://eprint.iacr.org/2020/1618.pdf) frameworks, etc. These are all ways of (with slightly different features) allowing distrustful parties to perform distributed but verifiable computations. In practice, the hiding factor of ZK-based approaches incurs large runtime costs, so instead I focus on constructing a purely hash-based approach inspired by Andrew Miller's work. In this, we use small-step evaluation in [SKI Calculus](https://en.wikipedia.org/wiki/SKI_combinator_calculus) itself as an authenticated data structure and its operational semantics of the calculus as a hash-indexed, canonical, verifiable object.
 
-Which is a fully Turing-complete model of computation without variables, which makes it particularly amenable for [intensional programs](https://www.cs.cmu.edu/~fp/papers/lics01.pdf) (both data and semantics matter). 
 
-In this, we can merklelize the SKI computation graph (which is a DAG) by assigning each node a cryptographic digest of 
-- its type (`S`, `K`, `I`, or `App`)
-- its children's hashes
-- and some nonce/MAC tag
+In [authenticated data structures](https://dl.acm.org/doi/pdf/10.1145/2535838.2535851), ADSs allow for an untrusted prover to maintain a mutable data structure while a verifier holds a short digest that authenticates the structure. Existing systems apply cryptographic hashing to data structures such as trees, maps, skip-lists, etc. And these systems allow the verifier to check a narrow scope of operations on such structure, but fundamentally computation is treated as external to the data structure itself -- only data is attested to, not general computation. 
 
-so then every SKI term becomes a Merkle tree and the hash at the root uniquely commits to the program.
+Through semantic hashing, we can treat teh operational semantics of computation itself as the object of authentication. Instead of hashing data stored in data strctures, we hash teh structure of redexes, partial applications, and evaluation contexts. Thus, every reduction state of the SKI calculus receives a canonical cryptographic digest that reflects its semantic form. In this way, it differs from the a checksum (in the way that Git/VCS works) that reflect *syntax*. In doing so, the operaitonal semantics become the authetnicated object in teh same way that a Merkle tree authenticates the shaep and contents of a dataset.
 
-Then the moment a reduction step happens, the tree structure changes so the node's hash changes up to the root.    
-    - This is the same as a local rewrite in a Merkle leaf causing a global change of commitments
+> Concerning checksums, it is often the case that two programs can be syntactically distinct but semantically equivalent -- an isssue that traditional hashing won't capture. But SKI terms assign the hash iff they correspond to the same semantic object under teh calculus. 
+
+This could be an interesting approach akin to the current suite of verifiable comptuation schemes like SNARK/STARK-based incrementally verifiable computation. There is probably also a way to get succinctness using an append-only accumulator (to enforce ordering on teh computation trace).
+
+TLDR: 
+> We do checksums to the semantics of a program via SKI calculus to get a binding verifiable computation trace.
